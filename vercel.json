@@ -6,6 +6,30 @@
   "installCommand": "npm install",
   "rewrites": [
     {
+      "source": "/musicfestival/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/musicfestival/favicon.svg",
+      "destination": "/favicon.svg"
+    },
+    {
+      "source": "/musicfestival/icons.svg",
+      "destination": "/icons.svg"
+    },
+    {
+      "source": "/musicfestival",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/musicfestival/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/musicfestival/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
@@ -13,6 +37,15 @@
   "headers": [
     {
       "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/musicfestival/assets/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
