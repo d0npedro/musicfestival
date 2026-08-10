@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Grounds — Music Festival Sandbox</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="game-canvas"></canvas>
+
+      <div id="overlay-gate" class="overlay">
+        <div class="gate-card">
+          <h1>NEON GROUNDS</h1>
+          <p class="subtitle">Open-world music festival sandbox</p>
+          <p class="hint">
+            Explore five electronic stages, build your own plot, and layer
+            rhythms under day/night skies.
+          </p>
+          <button id="btn-enter" type="button">Enter Festival</button>
+          <p class="tiny">WASD move · Mouse look · Shift sprint · E interact · B build · H help</p>
+        </div>
+      </div>
+
+      <div id="hud" class="hud hidden">
+        <div id="hud-top">
+          <div id="hud-time" class="pill">Day</div>
+          <div id="hud-weather" class="pill">Clear</div>
+          <div id="hud-stage" class="pill">Plaza</div>
+          <div id="hud-volume" class="pill">
+            <label for="master-vol">Vol</label>
+            <input id="master-vol" type="range" min="0" max="1" step="0.01" value="0.7" />
+          </div>
+        </div>
+        <canvas id="minimap" width="160" height="160"></canvas>
+        <div id="interact-prompt" class="prompt hidden">Press E</div>
+        <div id="help-panel" class="panel hidden">
+          <h2>Controls</h2>
+          <ul>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
+            <li><kbd>Mouse</kbd> Orbit camera (hold right / drag)</li>
+            <li><kbd>Shift</kbd> Sprint</li>
+            <li><kbd>E</kbd> Interact (deck, lights, FX)</li>
+            <li><kbd>B</kbd> Toggle build mode</li>
+            <li><kbd>R</kbd> Rotate module (build)</li>
+            <li><kbd>X</kbd> Remove nearest module (build)</li>
+            <li><kbd>1–5</kbd> Select build module</li>
+            <li><kbd>F</kbd> Trigger stage FX</li>
+            <li><kbd>H</kbd> Toggle this help</li>
+            <li><kbd>P</kbd> Manual save</li>
+          </ul>
+        </div>
+        <div id="build-panel" class="panel hidden">
+          <h2>Build Plot</h2>
+          <div id="build-palette" class="palette"></div>
+          <p class="tiny">Click ground to place · R rotate · X remove</p>
+        </div>
+        <div id="sequencer-panel" class="panel sequenc hidden">
+          <h2>Beat Sequencer</h2>
+          <div class="seq-controls">
+            <button id="seq-play" type="button">Play</button>
+            <button id="seq-stop" type="button">Stop</button>
+            <button id="seq-clear" type="button">Clear</button>
+            <label>BPM <input id="seq-tempo" type="number" min="100" max="150" value="128" /></label>
+          </div>
+          <div id="seq-grid" class="seq-grid"></div>
+          <p class="tiny">Kick · Snare · Hat · Bass — 16 steps</p>
+        </div>
+        <div id="light-panel" class="panel hidden">
+          <h2>Lights</h2>
+          <label>Color <input id="light-color" type="color" value="#ff00aa" /></label>
+          <label>Mode
+            <select id="light-mode">
+              <option value="static">Static</option>
+              <option value="pulse">Pulse</option>
+              <option value="beat">Beat-sync</option>
+            </select>
+          </label>
+          <button id="light-apply" type="button">Apply</button>
+          <button id="light-close" type="button">Close</button>
+        </div>
+        <div id="toast" class="toast hidden"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
