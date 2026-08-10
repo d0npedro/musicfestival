@@ -10,10 +10,18 @@ This document is for the **peddavommond.de** owner/agent. It assumes you can pus
 - **Default production base:** `/` (standalone Vercel URL)
 - **Subpage base:** set `VITE_BASE=/musicfestival/` (or another path) at build time
 
+### Live references (as of handover)
+
+| Resource | URL |
+|----------|-----|
+| **GitHub** | https://github.com/d0npedro/musicfestival |
+| **Vercel production** | https://musicfestival-nine.vercel.app/ |
+| **Vercel project** | `peters-projects-1631d4ab/musicfestival` (GitHub connected) |
+
 ## Clone / install / build
 
 ```bash
-git clone <THIS_REPO_URL>
+git clone https://github.com/d0npedro/musicfestival.git
 cd musicfestival
 npm install
 npm test
@@ -81,17 +89,17 @@ https://peddavommond.de/musicfestival/
   "rewrites": [
     {
       "source": "/musicfestival",
-      "destination": "https://herd-the-ravers.vercel.app/musicfestival"
+      "destination": "https://musicfestival-nine.vercel.app/musicfestival"
     },
     {
       "source": "/musicfestival/:path*",
-      "destination": "https://herd-the-ravers.vercel.app/musicfestival/:path*"
+      "destination": "https://musicfestival-nine.vercel.app/musicfestival/:path*"
     }
   ]
 }
 ```
 
-Adjust the destination hostname to the real production deployment host after first deploy.
+**Note:** The live standalone deploy currently uses `VITE_BASE=/`. Before enabling path rewrites on peddavommond.de, set `VITE_BASE=/musicfestival/` on this Vercel project, redeploy, then point rewrites at the production host (alias `musicfestival-nine.vercel.app` or the latest deployment URL).
 
 **Important:** With external rewrites, the **browser still requests** `/musicfestival/assets/...` on `peddavommond.de`. Those must either:
 
