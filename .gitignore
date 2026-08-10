@@ -36,3 +36,5 @@ dist-ssr
 Thumbs.db
 coverage
 .turbo
+
+.vercel
