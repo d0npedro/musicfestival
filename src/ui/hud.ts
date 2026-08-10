@@ -44,7 +44,7 @@ export class Hud {
     this.timerEl.classList.toggle('urgent', timeLeft < 60);
     const pct = Math.floor(ratio * 100);
     const need = Math.floor(WIN_HERD_RATIO * 100);
-    this.herdEl.textContent = `Herded ${herded}/${total} (${pct}%) · need ${need}%`;
+    this.herdEl.textContent = `At stages ${herded}/${total} (${pct}%) · need all (${need}%)`;
     this.herdEl.classList.toggle('good', ratio >= WIN_HERD_RATIO);
   }
 

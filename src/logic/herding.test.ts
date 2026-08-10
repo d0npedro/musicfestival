@@ -66,6 +66,8 @@ describe('shepherd force', () => {
       wanderAngle: 0.2,
       wanderTimer: 0.1,
       wrongWay: 0,
+      settled: false,
+      homeStage: -1,
     };
     const guard: GuardState = {
       x: 8,
@@ -77,5 +79,60 @@ describe('shepherd force', () => {
     const next = integrateSheep(agent, guard, 0.05, () => 0.3);
     expect(Number.isFinite(next.x)).toBe(true);
     expect(Number.isFinite(next.z)).toBe(true);
+  });
+
+  it('keeps settled ravers inside their stage zone', () => {
+    const st = GENRE_STAGES[0]!;
+    let agent: HerdAgent = {
+      x: st.x,
+      z: st.z + 8,
+      vx: 20,
+      vz: 20,
+      stubborn: 0.9,
+      wanderAngle: 0,
+      wanderTimer: 0,
+      wrongWay: 1,
+      settled: true,
+      homeStage: 0,
+    };
+    const guard: GuardState = {
+      x: st.x,
+      z: st.z + 8,
+      yaw: 0,
+      armsOpen: true,
+      shout: 1,
+    };
+    for (let i = 0; i < 40; i++) {
+      agent = integrateSheep(agent, guard, 0.05, () => 0.9);
+    }
+    expect(agent.settled).toBe(true);
+    expect(isInStageZone(agent.x, agent.z)).toBe(true);
+    expect(countHerded([agent])).toBe(1);
+  });
+
+  it('settles when entering a stage zone', () => {
+    const st = GENRE_STAGES[1]!;
+    const agent: HerdAgent = {
+      x: st.x,
+      z: st.z + 8,
+      vx: 0,
+      vz: 0,
+      stubborn: 0.2,
+      wanderAngle: 0,
+      wanderTimer: 1,
+      wrongWay: 0,
+      settled: false,
+      homeStage: -1,
+    };
+    const guard: GuardState = {
+      x: 0,
+      z: 0,
+      yaw: 0,
+      armsOpen: false,
+      shout: 0,
+    };
+    const next = integrateSheep(agent, guard, 0.016, () => 0.1);
+    expect(next.settled).toBe(true);
+    expect(next.homeStage).toBe(1);
   });
 });

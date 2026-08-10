@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:subpage": "tsc && vite build",
+    "build:subpage": "tsc && vite build --base /musicfestival/",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

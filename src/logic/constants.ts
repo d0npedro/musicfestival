@@ -17,8 +17,8 @@ export const SAVE_VERSION = 2;
 
 /** Mission: herd ravers before the headliner. */
 export const MISSION_SECONDS = 5 * 60;
-/** Fraction of crowd that must be in stage zones to win. */
-export const WIN_HERD_RATIO = 0.72;
+/** Fraction of crowd that must be in stage zones to win (all ravers at stages). */
+export const WIN_HERD_RATIO = 1;
 export const CROWD_COUNT = 320;
 
 /** Shepherd push radii / strengths (world units). */

@@ -21,6 +21,13 @@ export type HerdAgent = {
   wanderTimer: number;
   /** Brief panic / wrong-way impulse. */
   wrongWay: number;
+  /**
+   * Once driven into a stage zone, stay there (dance/crowd at the show).
+   * Sticky: does not unset if briefly nudged.
+   */
+  settled: boolean;
+  /** Home stage index when settled (GENRE_STAGES). */
+  homeStage: number;
 };
 
 export type GuardState = {
@@ -76,21 +83,56 @@ export function formatTimer(seconds: number): string {
   return `${mm}:${String(ss).padStart(2, '0')}`;
 }
 
-/** True if agent is inside any stage dance/herd zone. */
-export function isInStageZone(x: number, z: number): boolean {
-  for (const st of GENRE_STAGES) {
-    const d = Math.hypot(x - st.x, z - (st.z + 8));
-    if (d <= st.zoneRadius) return true;
-  }
-  return false;
+/** Stage zone center (dancefloor in front of stage). */
+export function stageZoneCenter(stageIndex: number): { x: number; z: number; radius: number } {
+  const st = GENRE_STAGES[stageIndex] ?? GENRE_STAGES[0]!;
+  return { x: st.x, z: st.z + 8, radius: st.zoneRadius };
 }
 
-export function countHerded(agents: readonly { x: number; z: number }[]): number {
+/** True if agent is inside any stage dance/herd zone. */
+export function isInStageZone(x: number, z: number): boolean {
+  return nearestStageIndex(x, z) >= 0;
+}
+
+/** Index of containing stage zone, or -1. */
+export function nearestStageIndex(x: number, z: number): number {
+  for (let i = 0; i < GENRE_STAGES.length; i++) {
+    const st = GENRE_STAGES[i]!;
+    const d = Math.hypot(x - st.x, z - (st.z + 8));
+    if (d <= st.zoneRadius) return i;
+  }
+  return -1;
+}
+
+/**
+ * Count ravers that count toward the goal: currently in a stage zone
+ * OR already settled (sticky herding — they stay at the show).
+ */
+export function countHerded(
+  agents: readonly { x: number; z: number; settled?: boolean }[],
+): number {
   let n = 0;
   for (const a of agents) {
-    if (isInStageZone(a.x, a.z)) n++;
+    if (a.settled || isInStageZone(a.x, a.z)) n++;
   }
   return n;
+}
+
+/** Clamp position into a stage zone (keep ravers on the dancefloor). */
+export function clampToStageZone(
+  x: number,
+  z: number,
+  stageIndex: number,
+  margin = 0.85,
+): { x: number; z: number } {
+  const { x: cx, z: cz, radius } = stageZoneCenter(stageIndex);
+  const r = radius * margin;
+  const dx = x - cx;
+  const dz = z - cz;
+  const d = Math.hypot(dx, dz);
+  if (d <= r || d < 1e-6) return { x, z };
+  const s = r / d;
+  return { x: cx + dx * s, z: cz + dz * s };
 }
 
 /**
@@ -171,8 +213,86 @@ export function integrateSheep(
   dt: number,
   rng: () => number = Math.random,
 ): HerdAgent {
-  let { x, z, vx, vz, stubborn, wanderAngle, wanderTimer, wrongWay } = agent;
+  let {
+    x,
+    z,
+    vx,
+    vz,
+    stubborn,
+    wanderAngle,
+    wanderTimer,
+    wrongWay,
+    settled,
+    homeStage,
+  } = agent;
 
+  // Sticky settle: once inside a stage zone, stay at that show
+  const zoneIdx = nearestStageIndex(x, z);
+  if (!settled && zoneIdx >= 0) {
+    settled = true;
+    homeStage = zoneIdx;
+  }
+
+  // --- Settled ravers: dance on stage, never leave the zone ---
+  if (settled) {
+    const home = homeStage >= 0 ? homeStage : Math.max(0, zoneIdx);
+    const { x: cx, z: cz } = stageZoneCenter(home);
+
+    wanderTimer -= dt;
+    if (wanderTimer <= 0) {
+      wanderTimer = 0.8 + rng() * 1.5;
+      wanderAngle = rng() * Math.PI * 2;
+    }
+
+    // Mild shuffle toward zone center + tiny orbit (party, not escape)
+    const toCx = cx - x;
+    const toCz = cz - z;
+    const distC = Math.hypot(toCx, toCz) || 1;
+    const dance = 1.1 + rng() * 0.4;
+    const ax =
+      (toCx / distC) * 1.6 + Math.sin(wanderAngle) * dance + (rng() - 0.5) * 0.5;
+    const az =
+      (toCz / distC) * 1.6 + Math.cos(wanderAngle) * dance + (rng() - 0.5) * 0.5;
+
+    // Softly ignore shepherd once settled (they're already "delivered")
+    const lag = 0.55;
+    vx = vx * (1 - lag) + ax * lag;
+    vz = vz * (1 - lag) + az * lag;
+    const sp = Math.hypot(vx, vz);
+    const maxSp = 2.8;
+    if (sp > maxSp) {
+      vx = (vx / sp) * maxSp;
+      vz = (vz / sp) * maxSp;
+    }
+
+    x += vx * dt;
+    z += vz * dt;
+    const clamped = clampToStageZone(x, z, home, 0.88);
+    x = clamped.x;
+    z = clamped.z;
+    // Kill outward velocity at boundary
+    const after = Math.hypot(x - cx, z - cz);
+    const { radius } = stageZoneCenter(home);
+    if (after > radius * 0.82) {
+      vx *= 0.3;
+      vz *= 0.3;
+    }
+
+    return {
+      x,
+      z,
+      vx,
+      vz,
+      stubborn,
+      wanderAngle,
+      wanderTimer,
+      wrongWay: 0,
+      settled: true,
+      homeStage: home,
+    };
+  }
+
+  // --- Field sheep: stubborn wander + herding ---
   wanderTimer -= dt;
   if (wanderTimer <= 0) {
     wanderTimer = 0.6 + rng() * 1.8;
@@ -216,7 +336,28 @@ export function integrateSheep(
   x += vx * dt;
   z += vz * dt;
 
-  return { x, z, vx, vz, stubborn, wanderAngle, wanderTimer, wrongWay };
+  // Enter zone this frame → settle immediately
+  const entered = nearestStageIndex(x, z);
+  if (entered >= 0) {
+    settled = true;
+    homeStage = entered;
+    const c = clampToStageZone(x, z, entered, 0.88);
+    x = c.x;
+    z = c.z;
+  }
+
+  return {
+    x,
+    z,
+    vx,
+    vz,
+    stubborn,
+    wanderAngle,
+    wanderTimer,
+    wrongWay,
+    settled,
+    homeStage,
+  };
 }
 
 export function winThreshold(): number {

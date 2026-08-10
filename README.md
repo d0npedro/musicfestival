@@ -21,7 +21,7 @@ npm run preview
 
 ## Goal
 
-- Herd **~72%** of ravers into the glowing **stage zones** (minimap circles)
+- Herd **all** ravers into the glowing **stage zones** (they stay once delivered)
 - Beat the **5:00** countdown
 - No dogs. No colleagues. Just you, a radio, and a high-vis vest
 

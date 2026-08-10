@@ -18,7 +18,8 @@ export class CameraFollow {
 
   applyLook(dx: number, dy: number): void {
     this.yaw -= dx * 0.005;
-    this.pitch += dy * 0.004;
+    // Invert vertical look: mouse up = look up / pitch down in spherical terms
+    this.pitch -= dy * 0.004;
     // Prefer slightly low angle (higher pitch = more top-down; keep mid-low)
     this.pitch = Math.max(0.28, Math.min(1.05, this.pitch));
   }

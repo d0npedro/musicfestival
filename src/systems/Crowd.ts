@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CROWD_COUNT, GENRE_STAGES, WORLD_HALF } from '../logic/constants';
 import {
+  clampToStageZone,
   countHerded,
   integrateSheep,
   type GuardState,
@@ -76,6 +77,8 @@ export class Crowd {
         wanderAngle: Math.random() * Math.PI * 2,
         wanderTimer: Math.random() * 2,
         wrongWay: 0,
+        settled: false,
+        homeStage: -1,
       };
       this.agents.push(agent);
       const hue = Math.random();
@@ -109,19 +112,20 @@ export class Crowd {
       let a = this.agents[i]!;
       a = integrateSheep(a, guard, dt);
 
-      // Keep out of solid stage platforms roughly
-      for (const st of GENRE_STAGES) {
-        const dx = a.x - st.x;
-        const dz = a.z - st.z;
-        if (Math.abs(dx) < 8 && Math.abs(dz) < 5 && a.z < st.z + 2) {
-          a.z = st.z + 6;
+      // Keep out of solid stage platforms roughly (field agents only)
+      if (!a.settled) {
+        for (const st of GENRE_STAGES) {
+          const dx = a.x - st.x;
+          const dz = a.z - st.z;
+          if (Math.abs(dx) < 8 && Math.abs(dz) < 5 && a.z < st.z + 2) {
+            a.z = st.z + 6;
+          }
         }
       }
 
       a.x = Math.max(-bound, Math.min(bound, a.x));
       a.z = Math.max(-bound, Math.min(bound, a.z));
       this.agents[i] = a;
-      this.writeInstance(i, a, time);
     }
 
     // Pairwise separation for nearby agents (throttled subset)
@@ -144,13 +148,27 @@ export class Crowd {
       }
     }
 
+    // Re-clamp settled ravers after separation so they never leave stages
+    for (let i = 0; i < this.agents.length; i++) {
+      const a = this.agents[i]!;
+      if (a.settled && a.homeStage >= 0) {
+        const c = clampToStageZone(a.x, a.z, a.homeStage, 0.88);
+        a.x = c.x;
+        a.z = c.z;
+      }
+      this.writeInstance(i, a, time);
+    }
+
     this.mesh.instanceMatrix.needsUpdate = true;
     this.propMesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
   private writeInstance(i: number, a: HerdAgent, time: number): void {
-    const dance = 0.06 + (a.wrongWay > 0 ? 0.12 : 0);
-    const bob = Math.abs(Math.sin(time * 5 + a.wanderAngle * 3)) * dance;
+    const dance = a.settled
+      ? 0.14 + Math.abs(Math.sin(time * 3 + i)) * 0.06
+      : 0.06 + (a.wrongWay > 0 ? 0.12 : 0);
+    const bob = Math.abs(Math.sin(time * (a.settled ? 7 : 5) + a.wanderAngle * 3)) * dance;
     this.dummy.position.set(a.x, 0.55 + bob, a.z);
     this.dummy.scale.set(1, 1 + bob * 0.5, 1);
     this.dummy.rotation.y = Math.atan2(a.vx, a.vz || 0.001);
@@ -166,7 +184,11 @@ export class Crowd {
     this.propMesh.setMatrixAt(i, this.propDummy.matrix);
 
     const hue = this.hues[i] ?? 0;
-    const c = new THREE.Color().setHSL(hue, 0.8, 0.48 + (a.wrongWay > 0 ? 0.1 : 0));
+    const c = new THREE.Color().setHSL(
+      hue,
+      0.8,
+      0.48 + (a.settled ? 0.12 : a.wrongWay > 0 ? 0.1 : 0),
+    );
     this.colors.setXYZ(i, c.r, c.g, c.b);
   }
 }
