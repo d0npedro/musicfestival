@@ -1,6 +1,8 @@
-# Neon Grounds — Music Festival Sandbox
+# Herd the Ravers — Festival Security
 
-Browser 3D open-world music festival sandbox built with **Vite**, **TypeScript**, **Three.js**, and the **Web Audio API**.
+Chaotic comedy herding game: you are the **only security guard** left at a huge outdoor electronic festival at **dusk**. Hundreds of slightly drunk ravers scatter like stubborn sheep. Drive them to the main stages before the headliner — you have **5 minutes**.
+
+Built with **Vite**, **TypeScript**, **Three.js**, and procedural **Web Audio**.
 
 ## Run
 
@@ -9,16 +11,25 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints (default `http://localhost:5173`).
+Open the URL Vite prints (default `http://localhost:5173`).  
+Do not open via `file://`.
 
-**Do not open `index.html` via `file://`** — ES modules require a local server.
+## Goal
 
-Production build:
+- Herd **~72%** of ravers into the glowing **stage zones** (minimap circles)
+- Beat the **5:00** countdown
+- No dogs. No colleagues. Just you, a radio, and a high-vis vest
 
-```bash
-npm run build
-npm run preview
-```
+## Controls
+
+| Input | Action |
+|--------|--------|
+| WASD | Jog (shepherd shuffle) |
+| Mouse drag | Orbit camera (low cinematic angle) |
+| Shift | Sprint |
+| **Hold Space** | Arms wide — push the flock |
+| E / F | Radio shout (wider scare) |
+| H | Help |
 
 ## Tests
 
@@ -26,29 +37,11 @@ npm run preview
 npm test
 ```
 
-Unit tests cover sequencer logic, persistence round-trips, day/night phase, weather transitions, crowd intensity mapping, collision/bounds, and build-grid placement (shipped modules under `src/logic/`).
+Pure logic tests cover herding forces, stage zones, mission timer win/lose, plus prior collision/sequencer helpers.
 
-## Controls
+## Stack
 
-| Key | Action |
-|-----|--------|
-| WASD | Move |
-| Mouse drag | Orbit camera |
-| Shift | Sprint |
-| E | Interact (deck sequencer / lights) |
-| B | Build mode |
-| 1–5 | Select module |
-| R | Rotate module |
-| X | Remove nearest module |
-| F | Stage FX (lasers / strobe) |
-| H | Help |
-| P | Manual save |
-
-## Features
-
-- Compact festival grounds with five genre stages: Psytrance, Tekk, Ghetto House, Hardstyle, Melodic DnB
-- Procedural Web Audio per genre + player 16-step × 4-track sequencer
-- Day/night cycle and weather (clear, cloudy, rain, fog)
-- Instanced crowds reacting to music intensity and rain shelter bias
-- Build your stage (deck, speakers, lights, LED wall, dancefloor)
-- `localStorage` persistence (`musicfestival-save-v1`)
+- Third-person guard controller + shepherd push physics
+- Instanced raver “sheep” AI (wander, lag, wrong-way bolts)
+- Five genre stages with procedural audio beds and lasers
+- Fixed dusk lighting, dusty ground, stage zones

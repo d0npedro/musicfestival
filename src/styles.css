@@ -143,6 +143,35 @@ body,
   font-size: 0.8rem;
 }
 
+.pill.timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  border-color: rgba(255, 204, 0, 0.45);
+  color: #ffcc00;
+}
+
+.pill.timer.urgent {
+  color: #ff3355;
+  border-color: rgba(255, 51, 85, 0.6);
+  animation: pulse-urgent 0.6s ease-in-out infinite alternate;
+}
+
+.pill.good {
+  border-color: rgba(80, 255, 140, 0.5);
+  color: #7dffb0;
+}
+
+@keyframes pulse-urgent {
+  from {
+    box-shadow: 0 0 0 rgba(255, 51, 85, 0);
+  }
+  to {
+    box-shadow: 0 0 16px rgba(255, 51, 85, 0.45);
+  }
+}
+
 #master-vol {
   width: 80px;
 }

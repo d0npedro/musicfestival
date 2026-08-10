@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Neon Grounds — Music Festival Sandbox</title>
+    <title>Herd the Ravers — Festival Security</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
@@ -13,75 +13,55 @@
 
       <div id="overlay-gate" class="overlay">
         <div class="gate-card">
-          <h1>NEON GROUNDS</h1>
-          <p class="subtitle">Open-world music festival sandbox</p>
+          <h1>HERD THE RAVERS</h1>
+          <p class="subtitle">You are alone. You have a radio. You have 5 minutes.</p>
           <p class="hint">
-            Explore five electronic stages, build your own plot, and layer
-            rhythms under day/night skies.
+            Dusk at a massive outdoor electronic festival. Hundreds of slightly drunk
+            ravers are scattered like stubborn sheep. You’re the only security guard
+            left — black uniform, high-vis vest, no dogs, no backup. Drive them to the
+            main stages before the headliner starts.
           </p>
-          <button id="btn-enter" type="button">Enter Festival</button>
-          <p class="tiny">WASD move · Mouse look · Shift sprint · E interact · B build · H help</p>
+          <button id="btn-enter" type="button">Start Shift</button>
+          <p class="tiny">
+            WASD jog · Mouse look · Shift sprint · Hold SPACE arms wide · E radio shout · H help
+          </p>
         </div>
       </div>
 
       <div id="hud" class="hud hidden">
         <div id="hud-top">
-          <div id="hud-time" class="pill">Day</div>
-          <div id="hud-weather" class="pill">Clear</div>
-          <div id="hud-stage" class="pill">Plaza</div>
+          <div id="hud-timer" class="pill timer">5:00</div>
+          <div id="hud-herd" class="pill">Herded 0/0</div>
+          <div id="hud-status" class="pill">Get to work</div>
           <div id="hud-volume" class="pill">
             <label for="master-vol">Vol</label>
-            <input id="master-vol" type="range" min="0" max="1" step="0.01" value="0.7" />
+            <input id="master-vol" type="range" min="0" max="1" step="0.01" value="0.65" />
           </div>
         </div>
         <canvas id="minimap" width="160" height="160"></canvas>
-        <div id="interact-prompt" class="prompt hidden">Press E</div>
+        <div id="interact-prompt" class="prompt hidden">Hold SPACE</div>
         <div id="help-panel" class="panel hidden">
-          <h2>Controls</h2>
+          <h2>How to herd</h2>
           <ul>
-            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
-            <li><kbd>Mouse</kbd> Orbit camera (hold right / drag)</li>
-            <li><kbd>Shift</kbd> Sprint</li>
-            <li><kbd>E</kbd> Interact (deck, lights, FX)</li>
-            <li><kbd>B</kbd> Toggle build mode</li>
-            <li><kbd>R</kbd> Rotate module (build)</li>
-            <li><kbd>X</kbd> Remove nearest module (build)</li>
-            <li><kbd>1–5</kbd> Select build module</li>
-            <li><kbd>F</kbd> Trigger stage FX</li>
-            <li><kbd>H</kbd> Toggle this help</li>
-            <li><kbd>P</kbd> Manual save</li>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Jog left/right like a desperate shepherd</li>
+            <li><kbd>Mouse</kbd> Orbit camera (low cinematic angle)</li>
+            <li><kbd>Shift</kbd> Sprint (when panic hits)</li>
+            <li><kbd>Space</kbd> <strong>Arms wide</strong> — push ravers away from you</li>
+            <li><kbd>E</kbd> / <kbd>F</kbd> Radio shout (wider scare pulse)</li>
+            <li>Drive the flock into the <strong>colored stage zones</strong> on the minimap</li>
+            <li>Need ~72% herded before the timer hits zero</li>
+            <li><kbd>H</kbd> Toggle help</li>
           </ul>
         </div>
-        <div id="build-panel" class="panel hidden">
-          <h2>Build Plot</h2>
-          <div id="build-palette" class="palette"></div>
-          <p class="tiny">Click ground to place · R rotate · X remove</p>
-        </div>
-        <div id="sequencer-panel" class="panel sequenc hidden">
-          <h2>Beat Sequencer</h2>
-          <div class="seq-controls">
-            <button id="seq-play" type="button">Play</button>
-            <button id="seq-stop" type="button">Stop</button>
-            <button id="seq-clear" type="button">Clear</button>
-            <label>BPM <input id="seq-tempo" type="number" min="100" max="150" value="128" /></label>
-          </div>
-          <div id="seq-grid" class="seq-grid"></div>
-          <p class="tiny">Kick · Snare · Hat · Bass — 16 steps</p>
-        </div>
-        <div id="light-panel" class="panel hidden">
-          <h2>Lights</h2>
-          <label>Color <input id="light-color" type="color" value="#ff00aa" /></label>
-          <label>Mode
-            <select id="light-mode">
-              <option value="static">Static</option>
-              <option value="pulse">Pulse</option>
-              <option value="beat">Beat-sync</option>
-            </select>
-          </label>
-          <button id="light-apply" type="button">Apply</button>
-          <button id="light-close" type="button">Close</button>
-        </div>
         <div id="toast" class="toast hidden"></div>
+      </div>
+
+      <div id="end-screen" class="overlay hidden">
+        <div class="gate-card">
+          <h1 id="end-title">SHIFT OVER</h1>
+          <p id="end-body" class="hint"></p>
+          <button id="btn-restart" type="button">Try Again</button>
+        </div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

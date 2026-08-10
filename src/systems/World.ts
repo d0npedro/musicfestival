@@ -1,10 +1,5 @@
 import * as THREE from 'three';
-import {
-  GENRE_STAGES,
-  PLOT_CENTER,
-  PLOT_HALF,
-  WORLD_HALF,
-} from '../logic/constants';
+import { GENRE_STAGES, WORLD_HALF } from '../logic/constants';
 import type { AABB } from '../logic/collision';
 import { makeBox } from '../logic/collision';
 import type { PlayerStageState, StageModule } from '../logic/buildGrid';
@@ -19,40 +14,95 @@ export class World {
   private pathMat: THREE.MeshStandardMaterial;
 
   constructor() {
+    // Dusty festival ground — trampled dirt at dusk
     this.groundMat = new THREE.MeshStandardMaterial({
-      color: 0x2d4a2d,
-      roughness: 0.95,
+      color: 0x6b5a3e,
+      roughness: 0.98,
+      metalness: 0.02,
     });
     this.pathMat = new THREE.MeshStandardMaterial({
-      color: 0x5a4a38,
-      roughness: 0.9,
+      color: 0x8a7348,
+      roughness: 0.95,
     });
     this.buildTerrain();
     this.buildPlaza();
     this.buildStages();
     this.buildProps();
-    this.buildPlayerPlot();
+    this.buildHerdZones();
     this.root.add(this.plotGroup);
   }
 
   private buildTerrain(): void {
     const size = WORLD_HALF * 2 + 20;
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(size, size, 32, 32),
+      new THREE.PlaneGeometry(size, size, 48, 48),
       this.groundMat,
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.root.add(ground);
 
-    // gentle berms as dark rings
+    // Dust patches
+    for (let i = 0; i < 18; i++) {
+      const patch = new THREE.Mesh(
+        new THREE.CircleGeometry(4 + Math.random() * 8, 12),
+        new THREE.MeshStandardMaterial({
+          color: 0x9a8560,
+          roughness: 1,
+          transparent: true,
+          opacity: 0.55,
+        }),
+      );
+      patch.rotation.x = -Math.PI / 2;
+      patch.position.set(
+        (Math.random() - 0.5) * 140,
+        0.03,
+        10 + Math.random() * 70,
+      );
+      this.root.add(patch);
+    }
+
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(95, 100, 64),
-      new THREE.MeshStandardMaterial({ color: 0x1a2a1a, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x3a3020, roughness: 1 }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.02;
     this.root.add(ring);
+  }
+
+  /** Glowing dancefloor zones — target for herding. */
+  private buildHerdZones(): void {
+    for (const s of GENRE_STAGES) {
+      const zone = new THREE.Mesh(
+        new THREE.CircleGeometry(s.zoneRadius, 40),
+        new THREE.MeshStandardMaterial({
+          color: s.color,
+          emissive: s.color,
+          emissiveIntensity: 0.25,
+          transparent: true,
+          opacity: 0.22,
+          roughness: 0.5,
+          metalness: 0.2,
+        }),
+      );
+      zone.rotation.x = -Math.PI / 2;
+      zone.position.set(s.x, 0.07, s.z + 8);
+      this.root.add(zone);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(s.zoneRadius - 0.4, s.zoneRadius, 48),
+        new THREE.MeshBasicMaterial({
+          color: s.color,
+          transparent: true,
+          opacity: 0.65,
+          side: THREE.DoubleSide,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(s.x, 0.09, s.z + 8);
+      this.root.add(ring);
+    }
   }
 
   private buildPlaza(): void {
@@ -269,45 +319,7 @@ export class World {
     }
   }
 
-  private buildPlayerPlot(): void {
-    const pad = new THREE.Mesh(
-      new THREE.PlaneGeometry(PLOT_HALF * 2, PLOT_HALF * 2),
-      new THREE.MeshStandardMaterial({
-        color: 0x2a2040,
-        emissive: 0x221133,
-        roughness: 0.7,
-      }),
-    );
-    pad.rotation.x = -Math.PI / 2;
-    pad.position.set(PLOT_CENTER.x, 0.06, PLOT_CENTER.z);
-    this.root.add(pad);
 
-    // grid outline
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.PlaneGeometry(PLOT_HALF * 2, PLOT_HALF * 2)),
-      new THREE.LineBasicMaterial({ color: 0xff2bd6 }),
-    );
-    edges.rotation.x = -Math.PI / 2;
-    edges.position.set(PLOT_CENTER.x, 0.08, PLOT_CENTER.z);
-    this.root.add(edges);
-
-    const signCanvas = document.createElement('canvas');
-    signCanvas.width = 256;
-    signCanvas.height = 64;
-    const c = signCanvas.getContext('2d')!;
-    c.fillStyle = '#1a1028';
-    c.fillRect(0, 0, 256, 64);
-    c.fillStyle = '#ff2bd6';
-    c.font = 'bold 28px sans-serif';
-    c.textAlign = 'center';
-    c.fillText('YOUR STAGE', 128, 40);
-    const sign = new THREE.Mesh(
-      new THREE.PlaneGeometry(6, 1.5),
-      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(signCanvas) }),
-    );
-    sign.position.set(PLOT_CENTER.x, 3, PLOT_CENTER.z - PLOT_HALF - 1);
-    this.root.add(sign);
-  }
 
   syncPlayerStage(state: PlayerStageState): void {
     const ids = new Set(state.modules.map((m) => m.id));

@@ -33,10 +33,10 @@ async function main() {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForTimeout(800);
 
-  // Enter Festival (audio gesture + start loop)
+  // Start Shift (audio gesture + start loop)
   const enter = page.locator('#btn-enter');
   await enter.click();
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1500);
 
   const metrics = await page.evaluate(() => {
     const canvas = document.getElementById('game-canvas');

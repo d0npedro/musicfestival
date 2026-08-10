@@ -1,27 +1,11 @@
 import * as THREE from 'three';
-import { GENRE_STAGES, MODULE_TYPES, PLOT_CENTER, type ModuleType } from '../logic/constants';
-import { nearestStageName } from '../logic/audioMix';
+import { CROWD_COUNT, DUSK_PHASE, GENRE_STAGES } from '../logic/constants';
 import {
-  nearestModule,
-  placeModule,
-  removeModule,
-  rotateModule,
-  updateModule,
-  type PlayerStageState,
-} from '../logic/buildGrid';
-import {
-  clearPattern,
-  cloneSequencer,
-  setPlaying,
-  setTempo,
-  toggleStep,
-} from '../logic/sequencer';
-import {
-  defaultSave,
-  loadFromStorage,
-  saveToStorage,
-  type SaveGame,
-} from '../logic/persistence';
+  advanceMissionTime,
+  createMission,
+  withHerdCount,
+  type MissionState,
+} from '../logic/herding';
 import { Input } from '../systems/Input';
 import { Player } from '../systems/Player';
 import { CameraFollow } from '../systems/CameraFollow';
@@ -33,12 +17,15 @@ import { Crowd } from '../systems/Crowd';
 import { FxSystem } from '../systems/FxSystem';
 import { Hud } from '../ui/hud';
 
+/**
+ * Chaos herding: one security guard, hundreds of drunk ravers, 5 minutes
+ * before the headliner — drive the flock to the main stages.
+ */
 export class Game {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private input: Input;
-  /** Exposed for automated verification / debug tooling. */
   readonly player = new Player();
   private camFollow: CameraFollow;
   private world = new World();
@@ -51,18 +38,10 @@ export class Game {
 
   private running = false;
   private lastT = 0;
-  private save: SaveGame = defaultSave();
-  private playerStage: PlayerStageState;
-  private buildMode = false;
-  private selectedModule: ModuleType = 'deck';
-  private ghostRot = 0;
-  private activeLightId: string | null = null;
-  private seqOpen = false;
-  private autosaveAcc = 0;
-  private raycaster = new THREE.Raycaster();
-  private pointer = new THREE.Vector2();
-  private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private mission: MissionState = createMission(CROWD_COUNT);
+  private shoutCooldownToast = 0;
   private canvas: HTMLCanvasElement;
+  private lasers: THREE.Mesh[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -78,10 +57,10 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.15;
 
     this.camera = new THREE.PerspectiveCamera(
-      60,
+      58,
       window.innerWidth / window.innerHeight,
       0.1,
       400,
@@ -89,8 +68,8 @@ export class Game {
     this.camFollow = new CameraFollow(this.camera);
     this.input = new Input(canvas);
 
-    this.scene.background = new THREE.Color(0x0a0a14);
-    this.scene.fog = new THREE.FogExp2(0x1a1a28, 0.004);
+    this.scene.background = new THREE.Color(0x1a1028);
+    this.scene.fog = new THREE.FogExp2(0x2a1a28, 0.006);
     this.scene.add(this.world.root);
     this.scene.add(this.player.mesh);
 
@@ -98,84 +77,80 @@ export class Game {
     this.weather = new WeatherSystem(this.scene);
     this.crowd = new Crowd(this.scene);
     this.fx = new FxSystem(this.scene);
+    this.buildLasers();
 
-    this.playerStage = this.save.playerStage;
+    // Fixed dusk — desperate pre-headliner light
+    this.dayNight.setPhase(DUSK_PHASE);
+    this.dayNight.applyVisuals(0.85);
+    this.weather.setType('clear');
+
+    this.player.setPose(0, 42, Math.PI);
+    this.camFollow.yaw = 0.05;
+    this.camFollow.pitch = 0.52;
 
     this.hud = new Hud({
       onVolume: (v) => this.audio.setMasterVolume(v),
-      onSeqToggle: (t, s) => this.onSeqToggle(t, s),
-      onSeqPlay: () => this.onSeqPlay(),
-      onSeqStop: () => this.onSeqStop(),
-      onSeqClear: () => this.onSeqClear(),
-      onSeqTempo: (bpm) => this.onSeqTempo(bpm),
-      onBuildSelect: (type) => {
-        this.selectedModule = type;
-      },
-      onLightApply: (color, mode) => this.onLightApply(color, mode),
-      onLightClose: () => {
-        this.activeLightId = null;
-        this.hud.setLightPanel(false);
-      },
+      onRestart: () => this.restartMission(),
     });
 
     this.hud.onEnter(() => void this.enterFestival());
     window.addEventListener('resize', () => this.onResize());
-    canvas.addEventListener('click', (e) => this.onCanvasClick(e));
 
-    this.load();
-    this.world.syncPlayerStage(this.playerStage);
-    this.hud.syncSequencer(this.playerStage.sequencer);
-    // idle preview render before enter
-    this.dayNight.setPhase(this.save.dayPhase);
-    this.dayNight.applyVisuals(1);
     this.camFollow.update(this.player);
     this.renderer.render(this.scene, this.camera);
   }
 
-  private load(): void {
-    const loaded = loadFromStorage();
-    if (loaded) {
-      this.save = loaded;
-      this.playerStage = loaded.playerStage;
-      this.player.setPose(loaded.player.x, loaded.player.z, loaded.player.yaw);
-      this.camFollow.yaw = loaded.player.yaw + 0.4;
-      this.dayNight.setPhase(loaded.dayPhase);
-      this.weather.setState(loaded.weather);
-    } else {
-      this.player.setPose(0, 8, 0);
+  private buildLasers(): void {
+    for (const s of GENRE_STAGES) {
+      for (let i = 0; i < 3; i++) {
+        const col = new THREE.Color(s.color);
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.06, 0.06, 45, 5),
+          new THREE.MeshBasicMaterial({
+            color: col,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+          }),
+        );
+        beam.position.set(s.x + (i - 1) * 3, 12, s.z);
+        beam.rotation.z = (i - 1) * 0.25;
+        beam.rotation.x = 0.4 + i * 0.1;
+        this.scene.add(beam);
+        this.lasers.push(beam);
+      }
     }
-  }
-
-  private persist(): void {
-    this.save = {
-      version: this.save.version,
-      player: {
-        x: this.player.position.x,
-        y: 0,
-        z: this.player.position.z,
-        yaw: this.player.yaw,
-      },
-      dayPhase: this.dayNight.phase,
-      weather: { ...this.weather.state },
-      playerStage: {
-        modules: this.playerStage.modules.map((m) => ({ ...m })),
-        sequencer: cloneSequencer(this.playerStage.sequencer),
-      },
-      visitedStages: [...this.save.visitedStages],
-    };
-    saveToStorage(this.save);
   }
 
   private async enterFestival(): Promise<void> {
     await this.audio.start();
-    this.audio.setMasterVolume(Number((document.getElementById('master-vol') as HTMLInputElement).value));
-    this.audio.setPlayerSequencer(this.playerStage.sequencer);
+    this.audio.setMasterVolume(
+      Number((document.getElementById('master-vol') as HTMLInputElement).value),
+    );
+    // Place player near stages for loud beds
+    this.audio.setPlayerPosition(this.player.position.x, this.player.position.z);
     this.hud.hideGate();
-    this.hud.showToast('Welcome to Neon Grounds');
+    this.hud.hideEnd();
+    this.hud.showToast('Radio: "Get those ravers to the stages — FIVE MINUTES!"');
+    this.mission = createMission(CROWD_COUNT);
     this.running = true;
     this.lastT = performance.now();
     this.canvas.focus();
     requestAnimationFrame((t) => this.loop(t));
+  }
+
+  private restartMission(): void {
+    this.crowd.scatterField();
+    this.player.setPose(0, 42, Math.PI);
+    this.mission = createMission(CROWD_COUNT);
+    this.hud.hideEnd();
+    this.hud.showToast('Radio: "Reset — round them up AGAIN!"');
+    this.lastT = performance.now();
+    // Loop already running after first Start Shift
+    if (!this.running) {
+      this.running = true;
+      requestAnimationFrame((t) => this.loop(t));
+    }
   }
 
   private loop(t: number): void {
@@ -184,278 +159,116 @@ export class Game {
     this.lastT = t;
     this.update(dt);
     this.renderer.render(this.scene, this.camera);
-    requestAnimationFrame((nt) => this.loop(nt));
+    if (this.running) requestAnimationFrame((nt) => this.loop(nt));
   }
 
   private update(dt: number): void {
-    // camera look
+    if (this.mission.status !== 'playing') {
+      // Still allow camera look on end screen
+      const mouse = this.input.consumeMouse();
+      this.camFollow.applyLook(mouse.dx, mouse.dy);
+      this.camFollow.update(this.player);
+      this.animateLasers(dt);
+      this.fx.update(dt);
+      this.input.endFrame();
+      return;
+    }
+
     const mouse = this.input.consumeMouse();
     this.camFollow.applyLook(mouse.dx, mouse.dy);
 
-    if (!this.seqOpen && !this.isTyping()) {
-      this.player.update(dt, this.input, this.camFollow.yaw, this.world.obstacles);
-    }
+    this.player.update(dt, this.input, this.camFollow.yaw, this.world.obstacles);
+    const guard = this.player.getGuardState();
 
-    this.handleHotkeys();
+    this.crowd.update(dt, guard);
 
-    this.dayNight.update(dt);
-    this.weather.update(dt, this.player.position.x, this.player.position.z);
-    this.dayNight.applyVisuals(this.weather.visual.ambientScale);
+    // Mission scoring
+    const herded = this.crowd.herdedCount();
+    this.mission = withHerdCount(this.mission, herded);
+    this.mission = advanceMissionTime(this.mission, dt);
 
-    this.audio.setDayPhase(this.dayNight.phase);
+    // Atmosphere locked dusk + dusty haze
+    this.dayNight.setPhase(DUSK_PHASE);
+    this.dayNight.applyVisuals(0.8 + Math.sin(performance.now() * 0.001) * 0.05);
+    this.weather.update(dt * 0.25, this.player.position.x, this.player.position.z);
+
+    this.audio.setDayPhase(DUSK_PHASE);
     this.audio.setPlayerPosition(this.player.position.x, this.player.position.z);
     this.audio.update();
 
     const intensities = GENRE_STAGES.map((s) => this.audio.getIntensity(s.id));
-    this.crowd.setStageIntensities(intensities);
-    const localI = this.audio.getLocalIntensity();
-    this.crowd.update(
-      dt,
-      this.player.position.x,
-      this.player.position.z,
-      localI,
-      this.weather.visual.cloudiness,
-      this.weather.visual.rain,
-      this.weather.shelter,
-    );
-
     const intensityMap: Record<string, number> = {};
     GENRE_STAGES.forEach((s, i) => {
-      intensityMap[s.id] = intensities[i] ?? 0;
+      intensityMap[s.id] = intensities[i] ?? 0.5;
     });
-    this.world.updateStageLights(intensityMap, this.dayNight.night, tSeconds());
-    this.world.updatePlayerLights(
-      this.playerStage,
-      this.audio.getBeatPulse(),
-      tSeconds(),
-    );
+    this.world.updateStageLights(intensityMap, 0.85, performance.now() * 0.001);
+
+    // Stage FX pulse
+    this.animateLasers(dt);
     this.fx.update(dt);
+
+    if (guard.shout > 0.9 && this.shoutCooldownToast <= 0) {
+      this.fx.triggerAt(this.player.position.x, 1.5, this.player.position.z, 'strobe');
+      this.hud.showToast(randomShout(), 1400);
+      this.shoutCooldownToast = 1.2;
+    }
+    this.shoutCooldownToast = Math.max(0, this.shoutCooldownToast - dt);
+
+    if (this.input.pressed('KeyH')) this.hud.toggleHelp();
 
     this.camFollow.update(this.player);
 
-    // visit tracking
-    const near = nearestStageName(this.player.position.x, this.player.position.z);
-    if (
-      near.id !== 'plaza' &&
-      near.id !== 'plot' &&
-      near.dist < 25 &&
-      !this.save.visitedStages.includes(near.id)
-    ) {
-      this.save.visitedStages.push(near.id);
+    this.hud.setMission(
+      this.mission.timeLeft,
+      this.mission.herded,
+      this.mission.total,
+      this.mission.ratio,
+    );
+    this.hud.setStatus(
+      guard.armsOpen
+        ? 'ARMS WIDE — driving the flock'
+        : guard.shout > 0.2
+          ? 'RADIO SHOUT!'
+          : 'Jog · Space herd · E shout',
+    );
+    this.hud.setPrompt(
+      guard.armsOpen
+        ? 'Shepherd mode — push with your body'
+        : 'Hold SPACE — arms open  ·  E — radio shout',
+    );
+    this.hud.drawMinimap(
+      this.player.position.x,
+      this.player.position.z,
+      this.player.yaw,
+      this.crowd.getAgents(),
+    );
+
+    if (this.mission.status === 'won') {
+      this.running = true; // keep rendering
+      this.hud.showEnd(true, this.mission.herded, this.mission.total);
+      this.fx.triggerAt(this.player.position.x, 2, this.player.position.z, 'confetti');
+      // freeze mission updates by status
+    } else if (this.mission.status === 'lost') {
+      this.hud.showEnd(false, this.mission.herded, this.mission.total);
     }
 
-    this.hud.setTimeLabel(this.dayNight.period, this.dayNight.phase);
-    this.hud.setWeather(this.weather.label);
-    this.hud.setStage(near.name);
-    this.hud.drawMinimap(this.player.position.x, this.player.position.z, this.player.yaw);
-    this.updateInteractPrompt();
-
-    if (this.seqOpen) {
-      this.hud.syncSequencer(this.playerStage.sequencer);
-    }
-
-    this.autosaveAcc += dt;
-    if (this.autosaveAcc > 20) {
-      this.autosaveAcc = 0;
-      this.persist();
+    // Stop gameplay updates but keep loop for end screen
+    if (this.mission.status !== 'playing') {
+      // mark so update takes early branch next frames — status handles it
     }
 
     this.input.endFrame();
   }
 
-  private handleHotkeys(): void {
-    if (this.isTyping()) return;
-
-    if (this.input.pressed('KeyH')) this.hud.toggleHelp();
-    if (this.input.pressed('KeyP')) {
-      this.persist();
-      this.hud.showToast('Game saved');
+  private animateLasers(dt: number): void {
+    const t = performance.now() * 0.001;
+    for (let i = 0; i < this.lasers.length; i++) {
+      const L = this.lasers[i]!;
+      L.rotation.y += dt * (0.4 + (i % 3) * 0.2);
+      L.rotation.z = Math.sin(t * 1.5 + i) * 0.35;
+      const mat = L.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.22 + Math.sin(t * 3 + i) * 0.12;
     }
-    if (this.input.pressed('KeyB')) {
-      this.buildMode = !this.buildMode;
-      this.hud.setBuildMode(this.buildMode);
-      this.hud.showToast(this.buildMode ? 'Build mode on' : 'Build mode off');
-    }
-    if (this.input.pressed('KeyR') && this.buildMode) {
-      this.ghostRot += Math.PI / 2;
-      const near = nearestModule(
-        this.playerStage.modules,
-        this.player.position.x,
-        this.player.position.z,
-        4,
-      );
-      if (near) {
-        this.playerStage = rotateModule(this.playerStage, near.id);
-        this.world.syncPlayerStage(this.playerStage);
-        this.persist();
-      }
-    }
-    if (this.input.pressed('KeyX') && this.buildMode) {
-      const near = nearestModule(
-        this.playerStage.modules,
-        this.player.position.x,
-        this.player.position.z,
-        4,
-      );
-      if (near) {
-        this.playerStage = removeModule(this.playerStage, near.id);
-        this.world.syncPlayerStage(this.playerStage);
-        this.persist();
-        this.hud.showToast('Removed module');
-      }
-    }
-    if (this.input.pressed('KeyF')) {
-      this.fx.triggerAt(
-        this.player.position.x,
-        1,
-        this.player.position.z,
-        'laser',
-      );
-      this.fx.triggerAt(
-        this.player.position.x,
-        1,
-        this.player.position.z,
-        'strobe',
-      );
-    }
-    // module hotkeys 1-5
-    for (let i = 0; i < MODULE_TYPES.length; i++) {
-      if (this.input.pressed(`Digit${i + 1}`)) {
-        this.selectedModule = MODULE_TYPES[i]!;
-        this.hud.setBuildMode(true);
-        this.buildMode = true;
-      }
-    }
-    if (this.input.pressed('KeyE')) this.tryInteract();
-  }
-
-  private updateInteractPrompt(): void {
-    const px = this.player.position.x;
-    const pz = this.player.position.z;
-    const mod = nearestModule(this.playerStage.modules, px, pz, 3.5);
-    if (mod?.type === 'deck') {
-      this.hud.setPrompt('Press E — Sequencer');
-      return;
-    }
-    if (mod?.type === 'lightPole' || mod?.type === 'ledWall') {
-      this.hud.setPrompt('Press E — Lights');
-      return;
-    }
-    // near player plot without modules
-    if (Math.hypot(px - PLOT_CENTER.x, pz - PLOT_CENTER.z) < PLOT_CENTER.x) {
-      // fallthrough
-    }
-    if (Math.hypot(px - PLOT_CENTER.x, pz - PLOT_CENTER.z) < 12) {
-      this.hud.setPrompt(this.buildMode ? 'Click to place · B exit build' : 'Press B — Build mode');
-      return;
-    }
-    // near any genre stage dancefloor for FX
-    for (const s of GENRE_STAGES) {
-      if (Math.hypot(px - s.x, pz - (s.z + 10)) < 12) {
-        this.hud.setPrompt('Press F — Stage FX');
-        return;
-      }
-    }
-    this.hud.setPrompt(null);
-  }
-
-  private tryInteract(): void {
-    const px = this.player.position.x;
-    const pz = this.player.position.z;
-    const mod = nearestModule(this.playerStage.modules, px, pz, 3.5);
-    if (mod?.type === 'deck') {
-      this.seqOpen = !this.seqOpen;
-      this.hud.setSequencerOpen(this.seqOpen);
-      this.hud.syncSequencer(this.playerStage.sequencer);
-      return;
-    }
-    if (mod && (mod.type === 'lightPole' || mod.type === 'ledWall')) {
-      this.activeLightId = mod.id;
-      this.hud.setLightPanel(true, mod.color ?? '#ff00aa', mod.lightMode ?? 'beat');
-      return;
-    }
-  }
-
-  private onCanvasClick(e: MouseEvent): void {
-    if (!this.running || !this.buildMode) return;
-    const rect = this.canvas.getBoundingClientRect();
-    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.groundPlane, hit)) return;
-    const next = placeModule(
-      this.playerStage,
-      this.selectedModule,
-      hit.x,
-      hit.z,
-      this.ghostRot,
-    );
-    if (!next) {
-      this.hud.showToast('Cannot place here');
-      return;
-    }
-    this.playerStage = next;
-    this.world.syncPlayerStage(this.playerStage);
-    this.persist();
-    this.hud.showToast(`Placed ${this.selectedModule}`);
-  }
-
-  private onSeqToggle(track: number, step: number): void {
-    const seq = toggleStep(this.playerStage.sequencer, track, step);
-    this.playerStage = { ...this.playerStage, sequencer: seq };
-    this.audio.setPlayerSequencer(seq);
-    this.hud.syncSequencer(seq);
-    this.persist();
-  }
-
-  private onSeqPlay(): void {
-    const seq = setPlaying(this.playerStage.sequencer, true);
-    this.playerStage = { ...this.playerStage, sequencer: seq };
-    this.audio.setPlayerSequencer(seq);
-    this.hud.syncSequencer(seq);
-    this.persist();
-  }
-
-  private onSeqStop(): void {
-    const seq = setPlaying(this.playerStage.sequencer, false);
-    this.playerStage = { ...this.playerStage, sequencer: seq };
-    this.audio.setPlayerSequencer(seq);
-    this.hud.syncSequencer(seq);
-    this.persist();
-  }
-
-  private onSeqClear(): void {
-    const seq = clearPattern(this.playerStage.sequencer);
-    this.playerStage = { ...this.playerStage, sequencer: seq };
-    this.audio.setPlayerSequencer(seq);
-    this.hud.syncSequencer(seq);
-    this.persist();
-  }
-
-  private onSeqTempo(bpm: number): void {
-    const seq = setTempo(this.playerStage.sequencer, bpm);
-    this.playerStage = { ...this.playerStage, sequencer: seq };
-    this.audio.setPlayerSequencer(seq);
-    this.persist();
-  }
-
-  private onLightApply(color: string, mode: 'static' | 'pulse' | 'beat'): void {
-    if (!this.activeLightId) return;
-    this.playerStage = updateModule(this.playerStage, this.activeLightId, {
-      color,
-      lightMode: mode,
-    });
-    this.world.syncPlayerStage(this.playerStage);
-    this.persist();
-    this.hud.showToast('Lights updated');
-  }
-
-  private isTyping(): boolean {
-    const a = document.activeElement;
-    if (!a) return false;
-    const tag = a.tagName;
-    return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA';
   }
 
   private onResize(): void {
@@ -466,7 +279,6 @@ export class Game {
     this.renderer.setSize(w, h);
   }
 
-  /** Snapshot used by headless browser checks. */
   getDebugState(): {
     playerX: number;
     playerZ: number;
@@ -474,18 +286,33 @@ export class Game {
     dayPhase: number;
     weather: string;
     running: boolean;
+    timeLeft: number;
+    herded: number;
   } {
     return {
       playerX: this.player.position.x,
       playerZ: this.player.position.z,
       yaw: this.player.yaw,
-      dayPhase: this.dayNight.phase,
+      dayPhase: DUSK_PHASE,
       weather: this.weather.state.type,
       running: this.running,
+      timeLeft: this.mission.timeLeft,
+      herded: this.mission.herded,
     };
   }
 }
 
-function tSeconds(): number {
-  return performance.now() * 0.001;
+const SHOUTS = [
+  'MOVE TO THE STAGE — PLEASE!',
+  'This is not a drum circle!',
+  'Glow sticks DOWN, bodies FORWARD!',
+  'Radio: "Where is everyone?!"',
+  "You're going the WRONG way!",
+  'Herd instinct… activate!',
+  'Five minutes! FIVE!',
+  'Security! …just me actually!',
+];
+
+function randomShout(): string {
+  return SHOUTS[Math.floor(Math.random() * SHOUTS.length)] ?? 'MOVE!';
 }

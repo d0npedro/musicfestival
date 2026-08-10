@@ -1,163 +1,172 @@
 import * as THREE from 'three';
 import { CROWD_COUNT, GENRE_STAGES, WORLD_HALF } from '../logic/constants';
 import {
-  blendIntensity,
-  danceAmplitude,
-  danceSpeed,
-  stageAttraction,
-  wanderSpeed,
-  weatherSlowFactor,
-} from '../logic/crowdLogic';
+  countHerded,
+  integrateSheep,
+  type GuardState,
+  type HerdAgent,
+} from '../logic/herding';
 
-type Agent = {
-  x: number;
-  z: number;
-  vx: number;
-  vz: number;
-  phase: number;
-  hue: number;
-  targetStage: number;
-};
-
+/**
+ * Hundreds of slightly drunk ravers that behave like stubborn sheep.
+ * Glow-stick colors, flags, random bolting — herded by the guard.
+ */
 export class Crowd {
   private mesh: THREE.InstancedMesh;
-  private agents: Agent[] = [];
+  private propMesh: THREE.InstancedMesh;
+  private agents: HerdAgent[] = [];
+  private hues: number[] = [];
   private dummy = new THREE.Object3D();
+  private propDummy = new THREE.Object3D();
   private colors: THREE.InstancedBufferAttribute;
-  private intensityMap: number[] = GENRE_STAGES.map(() => 0.3);
+  private propColors: THREE.InstancedBufferAttribute;
 
   constructor(scene: THREE.Scene) {
-    const geo = new THREE.CapsuleGeometry(0.25, 0.5, 3, 6);
+    const geo = new THREE.CapsuleGeometry(0.28, 0.55, 3, 6);
     const mat = new THREE.MeshStandardMaterial({
-      roughness: 0.7,
-      metalness: 0.1,
+      roughness: 0.65,
+      metalness: 0.08,
       vertexColors: true,
     });
     this.mesh = new THREE.InstancedMesh(geo, mat, CROWD_COUNT);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.castShadow = false;
-    this.mesh.receiveShadow = false;
+
+    // Glow sticks / flags as thin boxes above some agents
+    const propGeo = new THREE.BoxGeometry(0.08, 0.7, 0.08);
+    const propMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.5,
+      roughness: 0.4,
+    });
+    this.propMesh = new THREE.InstancedMesh(propGeo, propMat, CROWD_COUNT);
+    this.propMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
     const colorArray = new Float32Array(CROWD_COUNT * 3);
     this.colors = new THREE.InstancedBufferAttribute(colorArray, 3);
     this.mesh.instanceColor = this.colors;
 
+    const propColorArray = new Float32Array(CROWD_COUNT * 3);
+    this.propColors = new THREE.InstancedBufferAttribute(propColorArray, 3);
+    this.propMesh.instanceColor = this.propColors;
+
+    this.scatterField();
+    scene.add(this.mesh);
+    scene.add(this.propMesh);
+  }
+
+  /** Scatter ravers across dusty field (south of stages) — chaos at start. */
+  scatterField(): void {
+    this.agents = [];
+    this.hues = [];
     for (let i = 0; i < CROWD_COUNT; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const r = 8 + Math.random() * 90;
-      const agent: Agent = {
-        x: Math.cos(ang) * r,
-        z: Math.sin(ang) * r,
+      // Mostly open field between player spawn and stages
+      const x = (Math.random() - 0.5) * 100;
+      const z = 10 + Math.random() * 70;
+      // sprinkle some near sides already lost
+      const scatterX = Math.random() < 0.2 ? (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 50) : x;
+      const scatterZ = Math.random() < 0.15 ? -20 + Math.random() * 40 : z;
+
+      const agent: HerdAgent = {
+        x: scatterX,
+        z: scatterZ,
         vx: 0,
         vz: 0,
-        phase: Math.random() * Math.PI * 2,
-        hue: Math.random(),
-        targetStage: Math.floor(Math.random() * GENRE_STAGES.length),
+        stubborn: 0.25 + Math.random() * 0.75,
+        wanderAngle: Math.random() * Math.PI * 2,
+        wanderTimer: Math.random() * 2,
+        wrongWay: 0,
       };
       this.agents.push(agent);
-      const c = new THREE.Color().setHSL(agent.hue, 0.55, 0.45);
+      const hue = Math.random();
+      this.hues.push(hue);
+      const c = new THREE.Color().setHSL(hue, 0.75, 0.5);
       this.colors.setXYZ(i, c.r, c.g, c.b);
-      this.dummy.position.set(agent.x, 0.7, agent.z);
-      this.dummy.scale.set(1, 1, 1);
-      this.dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, this.dummy.matrix);
+      const glow = new THREE.Color().setHSL((hue + 0.15) % 1, 1, 0.55);
+      this.propColors.setXYZ(i, glow.r, glow.g, glow.b);
+      this.writeInstance(i, agent, 0);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.mesh);
+    this.propMesh.instanceMatrix.needsUpdate = true;
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    if (this.propMesh.instanceColor) this.propMesh.instanceColor.needsUpdate = true;
   }
 
-  setStageIntensities(intensities: number[]): void {
-    this.intensityMap = intensities;
+  getAgents(): readonly HerdAgent[] {
+    return this.agents;
   }
 
-  update(
-    dt: number,
-    playerX: number,
-    playerZ: number,
-    localIntensity: number,
-    cloudiness: number,
-    rain: number,
-    shelterBias: number,
-  ): void {
-    const wSlow = weatherSlowFactor(cloudiness, rain);
+  herdedCount(): number {
+    return countHerded(this.agents);
+  }
+
+  update(dt: number, guard: GuardState): void {
     const time = performance.now() * 0.001;
+    const bound = WORLD_HALF - 4;
 
+    // Soft flock separation (spatial hash lite: only nearby samples)
     for (let i = 0; i < this.agents.length; i++) {
-      const a = this.agents[i]!;
-      // nearest / assigned stage intensity
-      let bestI = 0;
-      let bestD = Infinity;
-      let tx = 0;
-      let tz = 0;
-      for (let s = 0; s < GENRE_STAGES.length; s++) {
-        const st = GENRE_STAGES[s]!;
-        const d = Math.hypot(st.x - a.x, st.z - a.z);
-        const bi = blendIntensity(this.intensityMap[s] ?? 0.3, d, 50);
-        if (bi > bestI || d < bestD) {
-          if (d < bestD) {
-            bestD = d;
-            tx = st.x;
-            tz = st.z + 10;
-          }
-          bestI = Math.max(bestI, bi);
+      let a = this.agents[i]!;
+      a = integrateSheep(a, guard, dt);
+
+      // Keep out of solid stage platforms roughly
+      for (const st of GENRE_STAGES) {
+        const dx = a.x - st.x;
+        const dz = a.z - st.z;
+        if (Math.abs(dx) < 8 && Math.abs(dz) < 5 && a.z < st.z + 2) {
+          a.z = st.z + 6;
         }
       }
-      // player stage influence
-      const pI = blendIntensity(localIntensity, Math.hypot(playerX - a.x, playerZ - a.z), 25);
-      const intensity = Math.max(bestI, pI);
 
-      const attract = stageAttraction(intensity);
-      const speed = wanderSpeed(intensity, wSlow);
-
-      // shelter tents bias in rain
-      if (shelterBias > 0.1 && Math.random() < shelterBias * dt * 0.5) {
-        // nudge toward origin-ish plaza tents
-        tx = a.x * 0.3;
-        tz = a.z * 0.3;
-      }
-
-      if (Math.random() < 0.02) a.targetStage = Math.floor(Math.random() * GENRE_STAGES.length);
-      const prefer = GENRE_STAGES[a.targetStage] ?? GENRE_STAGES[0]!;
-      const goalX = attract > 0.4 ? prefer.x : tx + (Math.random() - 0.5) * 20;
-      const goalZ = attract > 0.4 ? prefer.z + 12 : tz + (Math.random() - 0.5) * 20;
-
-      const dx = goalX - a.x;
-      const dz = goalZ - a.z;
-      const dist = Math.hypot(dx, dz) || 1;
-      a.vx = (dx / dist) * speed * (0.4 + attract);
-      a.vz = (dz / dist) * speed * (0.4 + attract);
-
-      // avoid player
-      const pdx = a.x - playerX;
-      const pdz = a.z - playerZ;
-      const pd = Math.hypot(pdx, pdz);
-      if (pd < 3 && pd > 0.01) {
-        a.vx += (pdx / pd) * 4;
-        a.vz += (pdz / pd) * 4;
-      }
-
-      a.x += a.vx * dt;
-      a.z += a.vz * dt;
-      const bound = WORLD_HALF - 5;
       a.x = Math.max(-bound, Math.min(bound, a.x));
       a.z = Math.max(-bound, Math.min(bound, a.z));
-
-      a.phase += dt * danceSpeed(intensity);
-      const amp = danceAmplitude(intensity);
-      const bob = Math.abs(Math.sin(a.phase + time)) * amp;
-      const scaleY = 1 + bob * 0.8;
-
-      this.dummy.position.set(a.x, 0.55 + bob, a.z);
-      this.dummy.scale.set(1, scaleY, 1);
-      this.dummy.rotation.y = Math.atan2(a.vx, a.vz);
-      this.dummy.updateMatrix();
-      this.mesh.setMatrixAt(i, this.dummy.matrix);
-
-      // emissive-ish tint via color brighten near intensity
-      const c = new THREE.Color().setHSL(a.hue, 0.55, 0.35 + intensity * 0.25);
-      this.colors.setXYZ(i, c.r, c.g, c.b);
+      this.agents[i] = a;
+      this.writeInstance(i, a, time);
     }
+
+    // Pairwise separation for nearby agents (throttled subset)
+    const step = 3;
+    for (let i = 0; i < this.agents.length; i += step) {
+      const a = this.agents[i]!;
+      for (let j = i + step; j < Math.min(this.agents.length, i + 24); j += step) {
+        const b = this.agents[j]!;
+        const dx = a.x - b.x;
+        const dz = a.z - b.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < 1.2 && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          const push = (0.35 * dt) / d;
+          a.x += (dx / d) * push;
+          a.z += (dz / d) * push;
+          b.x -= (dx / d) * push;
+          b.z -= (dz / d) * push;
+        }
+      }
+    }
+
     this.mesh.instanceMatrix.needsUpdate = true;
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    this.propMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  private writeInstance(i: number, a: HerdAgent, time: number): void {
+    const dance = 0.06 + (a.wrongWay > 0 ? 0.12 : 0);
+    const bob = Math.abs(Math.sin(time * 5 + a.wanderAngle * 3)) * dance;
+    this.dummy.position.set(a.x, 0.55 + bob, a.z);
+    this.dummy.scale.set(1, 1 + bob * 0.5, 1);
+    this.dummy.rotation.y = Math.atan2(a.vx, a.vz || 0.001);
+    this.dummy.updateMatrix();
+    this.mesh.setMatrixAt(i, this.dummy.matrix);
+
+    // Glow stick / flag
+    const wave = Math.sin(time * 6 + i) * 0.5;
+    this.propDummy.position.set(a.x + 0.25, 1.35 + bob + Math.abs(wave) * 0.1, a.z);
+    this.propDummy.rotation.set(wave * 0.4, a.wanderAngle, 0.2);
+    this.propDummy.scale.set(1, 1, 1);
+    this.propDummy.updateMatrix();
+    this.propMesh.setMatrixAt(i, this.propDummy.matrix);
+
+    const hue = this.hues[i] ?? 0;
+    const c = new THREE.Color().setHSL(hue, 0.8, 0.48 + (a.wrongWay > 0 ? 0.1 : 0));
+    this.colors.setXYZ(i, c.r, c.g, c.b);
   }
 }
