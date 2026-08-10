@@ -14,6 +14,11 @@ npm run dev
 Open the URL Vite prints (default `http://localhost:5173`).  
 Do not open via `file://`.
 
+```bash
+npm run build
+npm run preview
+```
+
 ## Goal
 
 - Herd **~72%** of ravers into the glowing **stage zones** (minimap circles)
@@ -37,7 +42,37 @@ Do not open via `file://`.
 npm test
 ```
 
-Pure logic tests cover herding forces, stage zones, mission timer win/lose, plus prior collision/sequencer helpers.
+Pure logic tests cover herding, mission timer, base-path deploy helpers, collision, etc.
+
+## Deploy (Vercel)
+
+Static SPA: build outputs to `dist/`. Config lives in `vercel.json`.
+
+```bash
+npm run build
+npx vercel --prod
+```
+
+Subdirectory build (e.g. peddavommond.de subpage):
+
+```bash
+# bash
+VITE_BASE=/musicfestival/ npm run build
+
+# PowerShell
+$env:VITE_BASE="/musicfestival/"; npm run build
+```
+
+See **[docs/HANDOVER-peddavommond.de.md](docs/HANDOVER-peddavommond.de.md)** for the full peddavommond.de agent checklist (Vercel fields, path rewrites, domain options).
+
+## Git remote
+
+If `git remote -v` is empty after clone:
+
+```bash
+git remote add origin https://github.com/<owner>/musicfestival.git
+git push -u origin main
+```
 
 ## Stack
 
@@ -45,3 +80,4 @@ Pure logic tests cover herding forces, stage zones, mission timer win/lose, plus
 - Instanced raver “sheep” AI (wander, lag, wrong-way bolts)
 - Five genre stages with procedural audio beds and lasers
 - Fixed dusk lighting, dusty ground, stage zones
+- Configurable Vite `base` via `VITE_BASE` for subpath hosting

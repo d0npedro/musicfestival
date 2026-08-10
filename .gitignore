@@ -7,10 +7,19 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & build
 node_modules
 dist
 dist-ssr
 *.local
+
+# Env & secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Vercel local link metadata (may contain org/project ids; keep out of public forks if desired)
+.vercel
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +31,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# OS / tooling
+Thumbs.db
+coverage
+.turbo
